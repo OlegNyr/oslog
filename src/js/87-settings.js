@@ -64,7 +64,7 @@
     $("sTest").onclick=function(){
       var b=$("sTest"); b.disabled=true; setMsg("sTestRes","проверяю…");
       osApi.testConnection(formPatch()).then(function(r){
-        setMsg("sTestRes","есть соединение · "+r.total.toLocaleString()+" записей за 15 мин · "+r.ms+" мс"+
+        setMsg("sTestRes","есть соединение · "+r.total.toLocaleString("ru-RU")+" записей за 15 мин · "+r.ms+" мс"+
           (r.shards&&r.shards.failed? " · сбойных шардов: "+r.shards.failed : ""),"ok");
       },function(e){ setMsg("sTestRes",e.message,"bad"); }).then(function(){ b.disabled=false; });
     };
