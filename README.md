@@ -45,7 +45,11 @@ Next to it is the outcome: «7 950 записей (из кэша 7 607, из Ope
 
 ![Whole trace: acd and matrixkc records of one traceId, timeline by span](docs/images/trace.png)
 
+**Sorting.** Click a column header (time, level, logger, thread, message, service and any added column) to sort by it: ▲, click again for ▼, once more for the load order. **Shift+click** adds the column as the next sort key (the headers show ▲1, ▲2…); Shift+clicking it again flips or removes it. For example: level, then service, then time ▼ — errors first, grouped by service, newest on top. Numbers in columns (e.g. `duration`) compare as numbers.
+
 Below is everything the viewer has: search within the loaded records (`/`), time range, levels, **▲ / ▼ issue** (Shift+P / Shift+N), columns, export, trace timeline, record details. Every field in the details has **⊕** (filter by this value) and **▦** (show as a column), including the Kubernetes fields — service, pod, node. Opening a `.log` file or pasting ndjson (Ctrl+V) still works.
+
+**CSV exports from OpenSearch Dashboards** (Discover → Share / Reporting → CSV) open the same way — «open file…», drag and drop or paste. The export must include the `message` column: it holds the original log line, and everything else is read from it. If the export also has `@timestamp`, `pod_labels.app`, `pod`, `namespace`, `container`, `node`, `k8sClusterName`, they are picked up too (service, pod, node in the details and as columns). Records are sorted by time; several files, CSV mixed with `.log` included, merge into one feed.
 
 ## Cache and offline use
 

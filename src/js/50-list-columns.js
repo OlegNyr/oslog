@@ -1,17 +1,18 @@
   // ---------- list columns (built-in + user-defined root-level JSON fields) ----------
   function buildColHead(){
+    // data-sort: click sorts by the column, Shift+click adds it as the next key (52-sorting.js)
     var html=
-      '<div class="c-seq">#<span class="col-rsz" data-var="--c-seq" data-min="36"></span></div>'+
-      '<div class="c-time">time<span class="col-rsz" data-var="--c-time" data-min="70"></span></div>'+
-      '<div class="c-lvl">level<span class="col-rsz" data-var="--c-lvl" data-min="44"></span></div>'+
-      '<div class="c-logger">logger<span class="col-rsz" data-var="--c-logger" data-min="80"></span></div>'+
-      '<div class="c-thread">thread<span class="col-rsz" data-var="--c-thread" data-min="80"></span></div>';
+      '<div class="c-seq" data-sort="seq">#'+sortMark("seq")+'<span class="col-rsz" data-var="--c-seq" data-min="36"></span></div>'+
+      '<div class="c-time" data-sort="time">time'+sortMark("time")+'<span class="col-rsz" data-var="--c-time" data-min="70"></span></div>'+
+      '<div class="c-lvl" data-sort="lvl">level'+sortMark("lvl")+'<span class="col-rsz" data-var="--c-lvl" data-min="44"></span></div>'+
+      '<div class="c-logger" data-sort="logger">logger'+sortMark("logger")+'<span class="col-rsz" data-var="--c-logger" data-min="80"></span></div>'+
+      '<div class="c-thread" data-sort="thread">thread'+sortMark("thread")+'<span class="col-rsz" data-var="--c-thread" data-min="80"></span></div>';
     customCols.forEach(function(c){
-      html+='<div class="c-custom" style="flex:0 0 var('+c.var+')" title="'+esc(c.path)+'">'+esc(c.label)+
+      html+='<div class="c-custom" style="flex:0 0 var('+c.var+')" title="'+esc(c.path)+'" data-sort="'+esc(c.path)+'">'+esc(c.label)+sortMark(c.path)+
             '<span class="col-x" data-key="'+esc(c.path)+'" title="Убрать колонку">×</span>'+
             '<span class="col-rsz" data-var="'+c.var+'" data-min="50"></span></div>';
     });
-    html+='<div class="c-msg">message</div>';
+    html+='<div class="c-msg" data-sort="msg">message'+sortMark("msg")+'</div>';
     $("colHead").innerHTML=html;
   }
   function cellValue(r, path){ // value at a JSON path (flat key or nested); objects shown as compact JSON
@@ -38,7 +39,10 @@
   }
   function removeCustomCol(path){
     customCols=customCols.filter(function(c){return c.path!==path;});
-    buildColHead(); renderVirtual(false);
+    var sorted=sortKeys.some(function(k){return k.col===path;});
+    sortKeys=sortKeys.filter(function(k){return k.col!==path;});
+    buildColHead();
+    if(sorted) applyFilters(); else renderVirtual(false);
   }
   function buildColsMenu(){
     var keys=rootKeys(), active={};

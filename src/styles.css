@@ -364,3 +364,6 @@
   .qbar .q-status.err{color:var(--lv-error)}
   .qbar .q-status.warn{color:var(--lv-warn)}
   .d-loadtrace{height:26px;margin:6px 0 2px}
+  .col-head>div[data-sort]{cursor:pointer;user-select:none}
+  .col-head>div[data-sort]:hover{color:var(--txt)}
+  .col-head .sort-ind{color:var(--accent);margin-left:4px;font-size:9px}

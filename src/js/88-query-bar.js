@@ -140,5 +140,5 @@
       if(e.key==="Enter" && e.target.tagName==="INPUT"){ e.preventDefault(); if(!qRunning) osLoad(); }
     });
     drop.querySelector("h1").textContent="Загрузите логи из OpenSearch";
-    drop.querySelector("p").textContent="Выберите сервисы и интервал в строке сверху и нажмите «загрузить». Можно и по-старому: перетащить сюда ndjson-файл или вставить его.";
+    drop.querySelector("p").textContent="Выберите сервисы и интервал в строке сверху и нажмите «загрузить». Можно и по-старому: перетащить сюда ndjson-файл или CSV-экспорт из OpenSearch Dashboards, или вставить его.";
   }

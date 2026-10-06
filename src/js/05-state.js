@@ -5,6 +5,7 @@
   var tlRange = null;        // {t0,t1} ms range currently drawn on the timeline (for drag->interval)
   var LANE_H = 12;           // px per timeline lane (9px bar + gap)
   var tlField = "traceId";   // current timeline grouping field: traceId | spanId | __idx (adaptive)
+  var sortKeys = [];         // list sort: [{col, dir: 1|-1}], col = seq|time|lvl|logger|thread|msg or a custom column path; [] = load order
   var customCols = [];       // user-added columns: [{key, var}] from root-level JSON fields
   var ccSeq = 0;             // counter for stable per-custom-column CSS var names (--cc-N)
   var COL_EXCLUDE = { "sequenceNumber":1, "@timestamp":1, "level":1, "logger":1, "message":1 }; // already shown by built-ins

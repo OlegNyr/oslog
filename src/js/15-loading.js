@@ -1,5 +1,6 @@
   // ---------- loading ----------
   function loadText(text, name){
+    if(csvSniff(text)){ loadParts([{name:name, text:text}]); return; }
     var lines = text.split(/\r?\n/);
     var recs=[];
     for(var i=0;i<lines.length;i++){
@@ -38,9 +39,27 @@
         r.readAsText(f);
       });
     });
-    Promise.all(readers).then(function(parts){
-      var text = parts.map(function(p){return p.text;}).join("\n");
-      var name = parts.length===1? parts[0].name : parts.length+" files";
-      loadText(text, name);
+    Promise.all(readers).then(loadParts);
+  }
+  // Files (or pasted text) as [{name, text}]. Plain ndjson keeps the file
+  // order; once a CSV export is among them, every line becomes a hit and the
+  // whole set is sorted by time like an OpenSearch result.
+  function loadParts(parts){
+    var name = parts.length===1? parts[0].name : parts.length+" файлов";
+    var csv = parts.filter(function(p){ return /\.csv$/i.test(p.name) || csvSniff(p.text); });
+    if(!csv.length){ loadText(parts.map(function(p){return p.text;}).join("\n"), name); return; }
+    var hits=[], errors=[];
+    parts.forEach(function(p){
+      if(csv.indexOf(p)>=0){
+        var res=csvToHits(p.text, p.name);
+        if(res.error) errors.push(res.error); else hits=hits.concat(res.hits);
+      } else {
+        p.text.split(/\r?\n/).forEach(function(ln){ if(ln.trim()!=="") hits.push({key:"", ts:NaN, msg:ln, k8s:{}}); });
+      }
     });
+    if(!hits.length){ toast(errors[0]||"нет записей"); return; }
+    setRecords(hitsToRecords(hits), name, "записей");
+    var apps={}; ALL.forEach(function(r){ if(r.k8s && r.k8s.app) apps[r.k8s.app]=1; });
+    if(Object.keys(apps).length>1 && !customCols.some(function(c){return c.path==="k8s.app";})) addCustomCol("k8s.app","service");
+    if(errors.length) toast(errors[0]);
   }

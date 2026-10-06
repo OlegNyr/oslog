@@ -46,6 +46,7 @@
       }
       VIEW.push(i);
     }
+    if(sortKeys.length) sortView();
     renderChips();
     renderStatus();
     renderVirtual(true);
