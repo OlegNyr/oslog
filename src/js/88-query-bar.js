@@ -61,6 +61,7 @@
   function setRunning(on){
     qRunning=on;
     var b=$("osLoad"); b.textContent=on? "стоп" : "загрузить"; b.classList.toggle("stop", on);
+    updateFiltersBtn();
   }
   function fmtN(n){ return Number(n||0).toLocaleString("ru-RU"); }
 

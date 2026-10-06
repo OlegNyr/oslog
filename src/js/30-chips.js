@@ -33,4 +33,5 @@
       box.appendChild(c);
     });
     bar.style.display = any? "flex":"none";
+    updateFiltersBtn();
   }
