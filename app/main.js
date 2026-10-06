@@ -3,6 +3,8 @@ const path = require('path');
 const { app, BrowserWindow, ipcMain, session, shell } = require('electron');
 const settings = require('./settings');
 const opensearch = require('./opensearch');
+const { openCache } = require('./cache');
+const { cachedSearch } = require('./search');
 
 const PAGE = path.join(__dirname, 'renderer', 'index.html');
 
@@ -10,6 +12,8 @@ const PAGE = path.join(__dirname, 'renderer', 'index.html');
 // whatever the OS locale is.
 app.commandLine.appendSwitch('lang', 'ru');
 let win = null;
+let cache = null;
+const CLEANUP_EVERY_MS = 60 * 60000;
 
 function createWindow() {
   win = new BrowserWindow({
@@ -84,26 +88,46 @@ handle('search', async (req) => {
   running = ctl;
   try {
     const s = settings.load();
-    const conn = connFrom(s, settings.getPassword());
-    return await opensearch.searchLogs(conn, req, {
+    const r = await cachedSearch({
+      cache,
+      getConn: () => connFrom(s, settings.getPassword()),
+      source: s.url,
+      req,
       signal: ctl.signal,
       onProgress: (p) => {
         if (win && !win.isDestroyed()) win.webContents.send('osapi:progress', Object.assign({ id }, p));
       },
     });
+    if (cache.bytes() > s.cacheMaxMb * 1048576) cleanupCache();
+    return r;
   } finally {
     if (running === ctl) running = null;
   }
 });
 handle('stopSearch', () => { if (running) running.abort(); return true; });
-handle('cacheStats', () => ({ enabled: false, hits: 0, bytes: 0 }));
-handle('clearCache', () => ({ enabled: false, removed: 0 }));
+handle('cacheStats', () => cache.stats());
+handle('clearCache', () => {
+  if (running) throw new Error('дождитесь окончания загрузки');
+  return cache.clear();
+});
+
+// Retention (days) and size limit from the settings; at start, hourly and
+// after a search that pushed the cache over the limit.
+function cleanupCache() {
+  const s = settings.load();
+  try { cache.cleanup({ days: s.cacheDays, maxBytes: s.cacheMaxMb * 1048576, now: Date.now() }); }
+  catch (e) { console.error('cache cleanup failed:', e.message); }
+}
 
 // ---------- lifecycle ----------
 app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+  cache = openCache(path.join(app.getPath('userData'), 'cache.db'));
+  cleanupCache();
+  setInterval(cleanupCache, CLEANUP_EVERY_MS).unref();
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('will-quit', () => { if (cache) cache.close(); });

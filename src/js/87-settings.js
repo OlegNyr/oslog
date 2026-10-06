@@ -32,10 +32,19 @@
   function openSettings(){
     if(!osApi) return;
     osApi.getSettings().then(function(s){
-      fillSettings(s); setMsg("sErr"); setMsg("sTestRes"); setMsg("sCacheRes");
+      fillSettings(s); setMsg("sErr"); setMsg("sTestRes"); showCacheStats();
       setBack.style.display="";
       $(s.url? "sPass" : "sUrl").focus();
     },function(e){ toast("настройки: "+e.message); });
+  }
+  function fmtBytes(b){ return b>=1073741824? (b/1073741824).toFixed(1)+" ГБ" : (b/1048576).toFixed(1)+" МБ"; }
+  function showCacheStats(){
+    setMsg("sCacheRes","…");
+    osApi.cacheStats().then(function(c){
+      if(!c.hits){ setMsg("sCacheRes","кэш пуст"); return; }
+      setMsg("sCacheRes", c.hits.toLocaleString("ru-RU")+" записей · "+fmtBytes(c.bytes)+" · "+
+        fmtFull({tsMs:c.oldest})+" → "+fmtFull({tsMs:c.newest}));
+    },function(e){ setMsg("sCacheRes",e.message,"bad"); });
   }
   function closeSettings(){ setBack.style.display="none"; $("sPass").value=""; }
   function settingsOpen(){ return setBack.style.display!=="none"; }
@@ -47,6 +56,11 @@
     $("sCancel").onclick=closeSettings;
     setBack.addEventListener("mousedown",function(e){ if(e.target===setBack) closeSettings(); });
     $("sPassClear").onclick=function(){ setClearPass=true; $("sPass").value=""; passPlaceholder(); };
+    $("sClearCache").onclick=function(){
+      var b=$("sClearCache"); b.disabled=true;
+      osApi.clearCache().then(function(r){ setMsg("sCacheRes","удалено записей: "+r.removed.toLocaleString("ru-RU"),"ok"); },
+        function(e){ setMsg("sCacheRes",e.message,"bad"); }).then(function(){ b.disabled=false; });
+    };
     $("sTest").onclick=function(){
       var b=$("sTest"); b.disabled=true; setMsg("sTestRes","проверяю…");
       osApi.testConnection(formPatch()).then(function(r){

@@ -79,17 +79,22 @@
     var t0=Date.now();
     setRunning(true); qStatus("загрузка…");
     osApi.search({ index:qs.index, apps:apps, from:from, to:to, query:qs.query, limit:limit }, function(p){
-      qStatus("загружено "+fmtN(p.loaded)+" из "+fmtN(p.total)+"…");
+      qStatus((p.cached? "из кэша "+fmtN(p.cached)+" · " : "")+"загружено "+fmtN(p.loaded)+" из "+fmtN(p.total)+"…");
     }).then(function(res){
+      // nothing at all (OpenSearch down, cache empty): keep what is on screen
+      if(res.reason==="error" && !res.hits.length){ qStatus("ошибка: "+res.error+" · в кэше за этот интервал ничего нет","err"); return; }
       var recs=hitsToRecords(res.hits);
       setRecords(recs, apps.join(" + ")+" · "+qs.index, "записей");
       var distinct={}; recs.forEach(function(r){ distinct[r.k8s.app]=1; });
       if(Object.keys(distinct).length>1 && !customCols.some(function(c){return c.path==="k8s.app";})) addCustomCol("k8s.app","service");
-      var sec=" · "+((Date.now()-t0)/1000).toFixed(1)+" с", n=fmtN(res.hits.length), tot=fmtN(res.total);
-      if(res.reason==="limit") qStatus(n+" из "+tot+" — достигнут лимит"+sec,"warn");
-      else if(res.reason==="stopped") qStatus("остановлено: "+n+" из "+tot+sec,"warn");
-      else if(res.reason==="error") qStatus(n+" из "+tot+", ошибка: "+res.error,"err");
-      else qStatus(n+(res.hits.length===1?" запись":" записей")+sec);
+      // total is known only for a straight OpenSearch query (Lucene); through the cache it's null
+      var sec=" · "+((Date.now()-t0)/1000).toFixed(1)+" с", n=fmtN(res.hits.length),
+          of=res.total!=null? " из "+fmtN(res.total) : "",
+          src=res.bypass? " · мимо кэша" : " (из кэша "+fmtN(res.cached)+", из OpenSearch "+fmtN(res.fetched)+")";
+      if(res.reason==="limit") qStatus(n+of+" — достигнут лимит"+src+sec,"warn");
+      else if(res.reason==="stopped") qStatus("остановлено: "+n+of+src+sec,"warn");
+      else if(res.reason==="error") qStatus((res.bypass? n+of : "показано из кэша: "+n)+" · ошибка: "+res.error,"err");
+      else qStatus(n+(res.hits.length===1?" запись":" записей")+src+sec);
     },function(e){
       qStatus(e.message,"err");
     }).then(function(){ setRunning(false); });
