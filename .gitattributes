@@ -1,0 +1,5 @@
+# LF everywhere, also in Windows checkouts (CI on windows-latest): the page
+# build hashes its inline script for the CSP, see build.js.
+* text=auto eol=lf
+*.png binary
+*.exe binary

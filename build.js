@@ -20,12 +20,15 @@ const SRC = path.join(ROOT, 'src');
 const JS_DIR = path.join(SRC, 'js');
 const OUT = path.join(ROOT, 'app', 'renderer', 'index.html');
 
-function read(p) { return fs.readFileSync(p, 'utf8'); }
+// Everything is normalized to LF. The HTML parser turns CRLF into LF before
+// the CSP hash of the inline script is checked, so a page written with CRLF
+// (a Windows checkout with core.autocrlf) gets its whole script blocked.
+function read(p) { return fs.readFileSync(p, 'utf8').replace(/\r\n?/g, '\n'); }
 
 const tpl = read(path.join(SRC, 'index.html'));
-const nl = tpl.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
+const nl = '\n';
 
-const css = read(path.join(SRC, 'styles.css')).replace(/\r?\n$/, '');
+const css = read(path.join(SRC, 'styles.css')).replace(/\n$/, '');
 
 const fragments = fs.readdirSync(JS_DIR)
   .filter(f => f.endsWith('.js'))
@@ -33,7 +36,7 @@ const fragments = fs.readdirSync(JS_DIR)
 if (!fragments.length) throw new Error('no js fragments found in ' + JS_DIR);
 
 const script = fragments
-  .map(f => read(path.join(JS_DIR, f)).replace(/\r?\n$/, ''))
+  .map(f => read(path.join(JS_DIR, f)).replace(/\n$/, ''))
   .join(nl + nl);
 
 const STYLE_MARK = '/*@build:styles@*/';
@@ -52,6 +55,8 @@ if (!m || out.indexOf('<script', m.index + 1) >= 0) throw new Error('expected ex
 if (out.indexOf(HASH_MARK) < 0) throw new Error('missing ' + HASH_MARK + ' in the CSP of src/index.html');
 const hash = 'sha256-' + crypto.createHash('sha256').update(m[1], 'utf8').digest('base64');
 out = out.replace(HASH_MARK, () => hash);
+
+if (out.indexOf('\r') >= 0) throw new Error('CR left in the page — the CSP hash would not match');
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, out);
