@@ -6,9 +6,34 @@
   "main": "app/main.js",
   "scripts": {
     "build": "node build.js",
-    "start": "node build.js && electron ."
+    "start": "node build.js && electron .",
+    "dist": "node build.js && electron-builder --win portable zip --x64"
   },
   "devDependencies": {
-    "electron": "^44.5.1"
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "author": "olegnyr",
+  "build": {
+    "appId": "oslog.viewer",
+    "productName": "oslog",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "app/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "portable",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.exe"
+    }
   }
 }

@@ -1,0 +1,31 @@
+# Builds the Windows portable .exe and the zip on windows-latest.
+# Runs on version tags (v0.1.0, …) and by hand (Actions → build → Run workflow);
+# the files are attached to the run as the "oslog-windows" artifact.
+name: build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run dist
+        env:
+          # no code-signing certificate yet — don't look for one
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oslog-windows
+          path: |
+            dist/*-portable.exe
+            dist/*.zip
+          if-no-files-found: error
