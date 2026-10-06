@@ -50,11 +50,18 @@
     }).join("\n");
   }
   function jsonHighlight(s){
-    return esc(s)
-      .replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)(\s*:)/g,'<span class="jk">$1</span>$2')
-      .replace(/:\s*(&quot;(?:[^&]|&(?!quot;))*?&quot;)/g,': <span class="js">$1</span>')
-      .replace(/:\s*(-?\d+\.?\d*)/g,': <span class="jn">$1</span>')
-      .replace(/:\s*(true|false|null)/g,': <span class="jb">$1</span>');
+    // one pass over the JSON text: a whole string token (with \" escapes) is never
+    // re-scanned, so "10:48:59" or "{\"a\":1}" inside a value stays a plain string
+    var re=/("(?:[^"\\]|\\.)*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b/g;
+    var out="", last=0, m;
+    while((m=re.exec(s))){
+      out+=esc(s.slice(last, m.index));
+      if(m[1]!==undefined) out+=m[2]!==undefined? '<span class="jk">'+esc(m[1])+'</span>'+m[2] : '<span class="js">'+esc(m[1])+'</span>';
+      else if(m[3]!==undefined) out+='<span class="jn">'+m[3]+'</span>';
+      else out+='<span class="jb">'+m[4]+'</span>';
+      last=re.lastIndex;
+    }
+    return out+esc(s.slice(last));
   }
   function copy(text){
     try{
