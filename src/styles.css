@@ -363,3 +363,4 @@
   .qbar .q-status{font-family:var(--mono);font-size:11px;color:var(--txt-dim);flex:0 1 auto;min-width:0;overflow-wrap:anywhere}
   .qbar .q-status.err{color:var(--lv-error)}
   .qbar .q-status.warn{color:var(--lv-warn)}
+  .d-loadtrace{height:26px;margin:6px 0 2px}

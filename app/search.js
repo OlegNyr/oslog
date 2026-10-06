@@ -1,6 +1,6 @@
 'use strict';
 // A search request through the cache (PLAN.md §8):
-//  - with a Lucene query: straight to OpenSearch, nothing cached;
+//  - with a Lucene query or a traceId: straight to OpenSearch, nothing cached;
 //  - otherwise, per service, newest → oldest over [from, to]: covered pieces
 //    are counted from SQLite, uncovered ones fetched from OpenSearch with what
 //    is left of the limit and stored; coverage is marked only for what was
@@ -17,7 +17,7 @@ async function cachedSearch({ cache, getConn, source, req, signal, onProgress, n
   const q = opensearch.validateSearch(req);
   const progress = onProgress || (() => {});
 
-  if (q.query) {
+  if (q.query || q.traceId) {
     const r = await opensearch.searchLogs(getConn(), q, { signal, onProgress: (p) => progress({ loaded: p.loaded, total: p.total, cached: 0 }) });
     return Object.assign(r, { cached: 0, fetched: r.hits.length, bypass: true });
   }

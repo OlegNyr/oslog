@@ -146,33 +146,38 @@ const PAGE = 1000;
 const TIE_PAGE = 10000; // one millisecond holding more than a page of hits
 const MAX_LIMIT = 100000;
 const APP_RE = /^[\w.-]{1,100}$/;
+const TRACE_RE = /^[0-9a-fA-F]{8,64}$/;
 const SOURCE = ['@timestamp', 'message', 'pod_labels.app', 'pod', 'namespace', 'container', 'node', 'k8sClusterName'];
 const SORT = [{ '@timestamp': { order: 'desc', unmapped_type: 'boolean' } }];
 
-// req from the renderer: {index, apps[], from, to (epoch ms), query?, limit}
+// req from the renderer: {index, apps[], from, to (epoch ms), query?, traceId?, limit}
+// With traceId, apps may be empty: the whole trace across all services.
 function validateSearch(req) {
   if (!req || typeof req !== 'object') throw new Error('неверный запрос');
   const index = req.index;
   if (typeof index !== 'string' || !INDEX_RE.test(index) || index.length > 512) throw new Error('неверное имя индекса');
-  const apps = req.apps;
-  if (!Array.isArray(apps) || !apps.length || apps.length > 20 || !apps.every((a) => typeof a === 'string' && APP_RE.test(a))) {
-    throw new Error('выберите хотя бы один сервис');
+  const traceId = req.traceId == null ? '' : req.traceId;
+  if (typeof traceId !== 'string' || (traceId && !TRACE_RE.test(traceId))) throw new Error('неверный traceId');
+  const apps = req.apps == null ? [] : req.apps;
+  if (!Array.isArray(apps) || apps.length > 20 || !apps.every((a) => typeof a === 'string' && APP_RE.test(a))) {
+    throw new Error('неверный список сервисов');
   }
+  if (!apps.length && !traceId) throw new Error('выберите хотя бы один сервис');
   const from = req.from, to = req.to;
   if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || from > to) throw new Error('неверный интервал');
   const query = req.query == null ? '' : req.query;
   if (typeof query !== 'string' || query.length > 4000) throw new Error('слишком длинный запрос');
   const limit = req.limit;
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new Error('лимит: от 1 до ' + MAX_LIMIT);
-  return { index, apps: Array.from(new Set(apps)), from, to, query: query.trim(), limit };
+  return { index, apps: Array.from(new Set(apps)), from, to, query: query.trim(), traceId, limit };
 }
 
 function searchBody(q, gte, lte, size, trackTotal) {
-  const filter = [
-    { range: { '@timestamp': { gte, lte, format: 'epoch_millis' } } },
-    { bool: { should: q.apps.map((a) => ({ match_phrase: { 'pod_labels.app': a } })), minimum_should_match: 1 } },
-  ];
+  const filter = [{ range: { '@timestamp': { gte, lte, format: 'epoch_millis' } } }];
+  if (q.apps.length) filter.push({ bool: { should: q.apps.map((a) => ({ match_phrase: { 'pod_labels.app': a } })), minimum_should_match: 1 } });
   if (q.query) filter.push({ query_string: { query: q.query, analyze_wildcard: true } });
+  // the cluster's ingest parses the log line into app.*; traceId is a flat MDC key there
+  if (q.traceId) filter.push({ match_phrase: { 'app.traceId': q.traceId } });
   return { size, sort: SORT, _source: SOURCE, track_total_hits: trackTotal, query: { bool: { filter } } };
 }
 

@@ -2,7 +2,8 @@
 // Generates synthetic FormatterElastic-style logs for matrixkc and acd over the
 // last hour and loads them into the local dev OpenSearch (index
 // plchat-k8s-prod-000008, so the default pattern plchat-k8s-prod-* finds them).
-// Includes the pagination edge case: TIES hits sharing one @timestamp.
+// Includes traces across both services and the pagination edge case: TIES
+// hits sharing one @timestamp.
 //   node dev/load-synthetic.js [count=6000] [http://localhost:9200]
 'use strict';
 
@@ -106,6 +107,21 @@ function doc(app, pod, ms, message) {
       const d = 20 + Math.floor(rnd() * 400);
       docs.push(doc(app, pod, ms + d, line(app, pod, ms + d, { logger: 'ru.otpbank.kc.request.outgoing', message: '{"chunk":[],"start":"t1"}',
         traceId: trace, correlation: corr, origin: 'remote', operation: 'response', url, duration: String(d) })));
+    } else if (r < 0.2) {
+      // a trace across both services: acd routes a chat and calls matrixkc
+      const trace = hex(32), sa = hex(16), sm = hex(16), room = '!' + hex(8) + ':otpbank.ru';
+      const steps = [
+        ['acd', 0, sa, 'ru.otpbank.kc.acd.router.Router', 'INFO', 'routing chat ' + room],
+        ['acd', 15, sa, 'ru.otpbank.kc.acd.queue.QueueService', 'INFO', 'chat ' + room + ' queued'],
+        ['matrixkc', 40, sm, 'ru.otpbank.kc.matrix.client.MatrixClient', 'INFO', 'invite agent to ' + room],
+        ['matrixkc', 90 + Math.floor(rnd() * 600), sm, 'ru.otpbank.kc.matrix.RoomCache', rnd() < 0.3 ? 'WARN' : 'INFO', 'room ' + room + ' state updated'],
+        ['matrixkc', 750, sm, 'ru.otpbank.kc.matrix.client.MatrixClient', 'INFO', 'invite done'],
+        ['acd', 800, sa, 'ru.otpbank.kc.acd.agent.AgentRegistry', 'INFO', 'agent assigned to ' + room],
+      ];
+      for (const [a, dt, span, logger, level, message] of steps) {
+        const p = pickOne(PODS[a]);
+        docs.push(doc(a, p, ms + dt, line(a, p, ms + dt, { traceId: trace, spanId: span, logger, level, message })));
+      }
     } else {
       docs.push(doc(app, pod, ms, line(app, pod, ms)));
     }

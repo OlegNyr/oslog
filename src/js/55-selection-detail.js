@@ -41,6 +41,11 @@
     if(o.operation) traceRows.push(["operation", o.operation, null, "operation"]);
     if(o.duration!==undefined) traceRows.push(["duration", o.duration+" ms", null, "duration"]);
     if(traceRows.length) b.appendChild(kvSection("trace · context", traceRows, r));
+    if(canLoadTrace(r)){
+      var lt=document.createElement("button"); lt.className="tbtn d-loadtrace"; lt.dataset.act="loadtrace";
+      lt.textContent="⤓ весь трейс"; lt.title="Загрузить из OpenSearch все записи этого traceId по всем сервисам (±1 ч от записи)";
+      b.appendChild(lt);
+    }
 
     // header / url / request context — resolve each field by the first existing path (flat MDC key or nested)
     var hdr=[];
@@ -99,6 +104,7 @@
       el.onclick=function(){
         var act=el.dataset.act;
         if(act==="trace"){ filters.trace=o.traceId; applyFilters(); }
+        else if(act==="loadtrace"){ loadTrace(r); }
         else if(act==="logger"){ filters.logger=r.logger; filters.loggerNeg=false; applyFilters(); }
         else if(act==="thread"){ filters.thread=r.thread; applyFilters(); }
         else if(act==="copystack"){ copy(o.error.stack_trace); }
