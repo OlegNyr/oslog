@@ -1,0 +1,14 @@
+{
+  "name": "oslog",
+  "version": "0.1.0",
+  "description": "Просмотр логов Spring Boot / ECS из OpenSearch с локальным кэшем",
+  "private": true,
+  "main": "app/main.js",
+  "scripts": {
+    "build": "node build.js",
+    "start": "node build.js && electron ."
+  },
+  "devDependencies": {
+    "electron": "^44.5.1"
+  }
+}

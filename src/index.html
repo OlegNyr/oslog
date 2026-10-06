@@ -1,0 +1,124 @@
+<!doctype html>
+<!--
+  oslog renderer page (forked from the logview single-file viewer).
+  build.js inlines styles.css and js/*.js here → app/renderer/index.html.
+  The page has no network access (CSP); OpenSearch goes through window.osApi.
+  Built for Spring Boot ECS logs: @timestamp / level / logger / process.thread.name /
+  traceId / spanId / correlation / origin / operation / header.* / url / duration / error.stack_trace
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src '@build:script-hash@'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>oslog</title>
+<style>
+/*@build:styles@*/
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="brand"><b>oslog</b><span id="fileName">no file</span></div>
+  <div class="timerange" id="timerange" title="Показать только записи во временном интервале">
+    <input type="datetime-local" id="tFrom" title="от">
+    <span class="arrow">→</span>
+    <input type="datetime-local" id="tTo" title="до">
+    <button id="tClear" title="Сбросить интервал">×</button>
+  </div>
+  <div class="search">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <input id="q" type="text" placeholder="filter… (substring across all fields)" spellcheck="false" autocomplete="off">
+    <button class="re-toggle" id="reToggle" title="Treat query as a regular expression">.*</button>
+  </div>
+  <div class="levels" id="levels"></div>
+  <button class="tbtn" id="prevHit" title="Previous WARN/ERROR (Shift+P)">▲ issue</button>
+  <button class="tbtn" id="nextHit" title="Next WARN/ERROR (Shift+N)">issue ▼</button>
+  <button class="tbtn" id="colsBtn" title="Колонки из полей JSON корневого уровня">колонки</button>
+  <button class="tbtn" id="exportBtn" title="Download the currently filtered rows as ndjson">export</button>
+  <button class="tbtn" id="openBtn">open file…</button>
+  <input type="file" id="fileInput" accept=".log,.json,.ndjson,.txt,.jsonl" multiple>
+  <button class="tbtn" id="settingsBtn" title="Настройки подключения и кэша" style="display:none">⚙</button>
+</div>
+
+<div class="toolbar" id="chipBar" style="display:none;border-top:0;padding-top:0;padding-bottom:7px;background:var(--bg-2)">
+  <div class="chips" id="chips"></div>
+</div>
+
+<div class="timeline" id="timeline" style="display:none" title="Спаны трейсов. Клик — перейти к трейсу. Протяни мышью — задать интервал."></div>
+<div class="tl-resize" id="tlResize" style="display:none" title="Потяни, чтобы изменить высоту шкалы"></div>
+
+<div class="main">
+  <div class="list-wrap">
+    <div class="col-head" id="colHead">
+      <div class="c-seq">#<span class="col-rsz" data-col="seq"></span></div>
+      <div class="c-time">time<span class="col-rsz" data-col="time"></span></div>
+      <div class="c-lvl">level<span class="col-rsz" data-col="lvl"></span></div>
+      <div class="c-logger">logger<span class="col-rsz" data-col="logger"></span></div>
+      <div class="c-thread">thread<span class="col-rsz" data-col="thread"></span></div>
+      <div class="c-msg">message</div>
+    </div>
+    <div class="vlist" id="vlist" tabindex="0">
+      <div class="vspacer" id="vspacer"><div class="vrows" id="vrows"></div></div>
+      <div class="drop" id="drop">
+        <div class="glyph">{ }</div>
+        <h1>Drop a log file here</h1>
+        <p>JSON-lines / ndjson straight from Kubernetes. Nothing leaves your machine — this page makes no network requests.</p>
+        <button class="btn-open" id="dropOpen">Open file…</button>
+        <p class="hint">…or paste with Ctrl/Cmd+V &nbsp;·&nbsp; e.g. <code>kubectl logs deploy/acd --tail=5000 &gt; acd.log</code></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="dragbar" id="dragbar"></div>
+  <div class="detail hidden" id="detail">
+    <div class="d-head">
+      <span class="lvl-badge" id="dLevel"></span>
+      <span class="mini" id="dLogger"></span>
+      <span class="d-seq" id="dSeq"></span>
+      <button class="x" id="dClose" title="Close (Esc)">×</button>
+    </div>
+    <div class="d-body" id="dBody"></div>
+  </div>
+</div>
+
+<div class="status" id="status">
+  <span>drop a file to begin</span>
+</div>
+
+<div class="modal-back" id="setBack" style="display:none">
+  <div class="modal" id="setModal" role="dialog" aria-labelledby="setTitle">
+    <div class="m-head"><b id="setTitle">Настройки</b><button class="x" id="setClose" title="Закрыть (Esc)">×</button></div>
+    <div class="m-body">
+      <div class="m-sec">OpenSearch</div>
+      <label>URL<input id="sUrl" type="text" placeholder="https://opensearch.example:9200" spellcheck="false" autocomplete="off"></label>
+      <label>Логин<input id="sUser" type="text" spellcheck="false" autocomplete="off"></label>
+      <label>Пароль<span class="m-row"><input id="sPass" type="password" autocomplete="off"><button class="tbtn" id="sPassClear" title="Удалить сохранённый пароль">удалить</button></span></label>
+      <div class="m-res bad" id="sPassWarn" style="display:none"></div>
+      <label>CA-сертификат<input id="sCa" type="text" placeholder="путь к .pem (необязательно)" spellcheck="false" autocomplete="off"></label>
+      <label class="m-check"><input id="sInsecure" type="checkbox"> не проверять сертификат сервера</label>
+      <label>Индекс по умолчанию<input id="sIndex" type="text" spellcheck="false" autocomplete="off"></label>
+      <div class="m-row m-test"><button class="tbtn" id="sTest">проверить соединение</button><span id="sTestRes" class="m-res"></span></div>
+      <div class="m-sec">Кэш</div>
+      <div class="m-row">
+        <label>Хранить, дней<input id="sDays" type="number" min="1" max="365"></label>
+        <label>Макс. размер, ГБ<input id="sSize" type="number" min="0.1" max="100" step="0.1"></label>
+      </div>
+      <div class="m-row"><button class="tbtn" id="sClearCache" disabled title="Появится вместе с кэшем">очистить кэш</button><span id="sCacheRes" class="m-res"></span></div>
+    </div>
+    <div class="m-foot"><span id="sErr" class="m-res m-err"></span><button class="tbtn" id="sCancel">отмена</button><button class="tbtn m-primary" id="sSave">сохранить</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="cols-pop" id="colsPop" style="display:none"></div>
+
+<script>
+"use strict";
+(function(){
+/*@build:script@*/
+
+})();
+</script>
+</body>
+</html>
