@@ -1,6 +1,8 @@
-# Local OpenSearch for development: http://localhost:9200, no security plugin.
+# Local OpenSearch (+ Dashboards) for development, no security plugin:
+#   OpenSearch  http://localhost:9200
+#   Dashboards  http://localhost:5601   (the app also works through it)
 #   docker compose -f dev/docker-compose.yml up -d
-#   node dev/load-sample.js        # load docs/response.json hits
+#   node dev/load-synthetic.js     # synthetic logs (node dev/load-sample.js — real sample, local only)
 services:
   opensearch:
     image: opensearchproject/opensearch:2
@@ -14,5 +16,15 @@ services:
       - "127.0.0.1:9200:9200"
     volumes:
       - oslog-os-data:/usr/share/opensearch/data
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:2
+    container_name: oslog-osd
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    ports:
+      - "127.0.0.1:5601:5601"
+    depends_on:
+      - opensearch
 volumes:
   oslog-os-data:

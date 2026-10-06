@@ -51,6 +51,10 @@ function osErrorText(status, body) {
   let reason = '';
   try {
     const j = JSON.parse(body);
+    if (typeof j.error === 'string') { // {"error":"no handler…"} or Dashboards' {statusCode, error, message}
+      reason = j.error + (j.message && j.message !== j.error ? ': ' + j.message : '');
+      return status + ': ' + reason.slice(0, 500);
+    }
     const rc = j.error && (j.error.root_cause && j.error.root_cause[0] || j.error);
     reason = rc ? (rc.type ? rc.type + ': ' : '') + (rc.reason || '') : '';
     const cb = (rc && rc.caused_by) || (j.error && j.error.caused_by);
@@ -61,15 +65,17 @@ function osErrorText(status, body) {
   return status + (reason ? ': ' + reason.slice(0, 500) : '');
 }
 
-// conn: {url, username, password, caPath, insecure}
-function request(conn, method, path, body, opts) {
+// conn: {url, username, password, caPath, insecure}. Rejects with
+// err.status and err.dashboards (the answer came from OpenSearch Dashboards,
+// not from OpenSearch: its osd-* headers or its {statusCode, error} body).
+function rawRequest(conn, method, path, body, opts, extraHeaders) {
   opts = opts || {};
   return new Promise((resolve, reject) => {
     let u;
     try { u = new URL(conn.url + path); } catch (e) { return reject(new Error('неверный URL OpenSearch')); }
     const isHttps = u.protocol === 'https:';
     const payload = body == null ? null : Buffer.from(JSON.stringify(body));
-    const headers = { Accept: 'application/json' };
+    const headers = Object.assign({ Accept: 'application/json' }, extraHeaders || {});
     if (payload) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = payload.length; }
     if (conn.username) headers.Authorization = 'Basic ' + Buffer.from(conn.username + ':' + (conn.password || '')).toString('base64');
     const reqOpts = { method, headers, timeout: opts.timeout || TIMEOUT_MS };
@@ -89,8 +95,21 @@ function request(conn, method, path, body, opts) {
       });
       res.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
-        if (res.statusCode < 200 || res.statusCode >= 300) return reject(new Error(osErrorText(res.statusCode, text)));
-        try { resolve(JSON.parse(text)); } catch (e) { reject(new Error('ответ OpenSearch не JSON')); }
+        const st = res.statusCode;
+        if (st >= 300 && st < 400) {
+          return reject(Object.assign(new Error(st + ': сервер переадресует на ' + String(res.headers.location || '?').slice(0, 120) +
+            ' — похоже на вход через браузер (SSO); нужен вход по логину и паролю'), { status: st }));
+        }
+        if (st < 200 || st >= 300) {
+          // Dashboards' own answer, not an OpenSearch error passed through its proxy
+          // (the proxy adds osd-* headers to those too)
+          let j = null;
+          try { j = JSON.parse(text); } catch (e) { /* not JSON */ }
+          const osError = !!(j && j.error && typeof j.error === 'object');
+          const osd = !osError && !!(res.headers['osd-name'] || res.headers['osd-version'] || res.headers['kbn-name'] || (j && typeof j.statusCode === 'number'));
+          return reject(Object.assign(new Error(osErrorText(st, text)), { status: st, dashboards: osd }));
+        }
+        try { resolve(JSON.parse(text)); } catch (e) { reject(new Error('ответ сервера не JSON — это точно адрес OpenSearch или Dashboards?')); }
       });
       res.on('error', (e) => reject(new Error(errorText(e))));
     });
@@ -103,6 +122,38 @@ function request(conn, method, path, body, opts) {
     req.end(payload);
   });
 }
+
+// The URL may be OpenSearch itself or OpenSearch Dashboards — colleagues often
+// can reach only Dashboards. The first request goes direct; if Dashboards
+// answers (404 on /<index>/_search), it is repeated through Dashboards' Dev
+// Tools proxy, with the same basic auth, and the mode is remembered per URL.
+const modes = new Map(); // url -> 'direct' | 'dashboards'
+
+function viaDashboards(conn, method, path, body, opts) {
+  const p = '/api/console/proxy?path=' + encodeURIComponent(path.replace(/^\//, '')) + '&method=' + encodeURIComponent(method);
+  return rawRequest(conn, 'POST', p, body, opts, { 'osd-xsrf': 'true' }).catch((e) => {
+    if (e.dashboards && e.status === 404) {
+      throw new Error('это адрес OpenSearch Dashboards, но запросы через него закрыты (нет /api/console/proxy — выключена консоль Dev Tools); нужен прямой адрес OpenSearch');
+    }
+    throw e;
+  });
+}
+
+async function request(conn, method, path, body, opts) {
+  if (modes.get(conn.url) === 'dashboards') return viaDashboards(conn, method, path, body, opts);
+  try {
+    const r = await rawRequest(conn, method, path, body, opts);
+    modes.set(conn.url, 'direct');
+    return r;
+  } catch (e) {
+    if (!(e.dashboards && e.status === 404)) throw e;
+    const r = await viaDashboards(conn, method, path, body, opts);
+    modes.set(conn.url, 'dashboards');
+    return r;
+  }
+}
+
+function connectionMode(url) { return modes.get(url) || null; }
 
 // A search answers 200 even when some shards failed (e.g. a bad Lucene query
 // fails only on shards that weren't skipped by the time range) — the hits are
@@ -136,6 +187,7 @@ async function testConnection(conn, index) {
   const total = r.hits && r.hits.total;
   return {
     ms: Date.now() - t0,
+    via: connectionMode(conn.url),
     total: typeof total === 'number' ? total : (total && total.value) || 0,
     shards: r._shards ? { total: r._shards.total, failed: r._shards.failed } : null,
   };
@@ -323,4 +375,4 @@ async function histogram(conn, req, opts) {
   };
 }
 
-module.exports = { request, search, testConnection, searchLogs, validateSearch, compactHit, histogram };
+module.exports = { request, connectionMode, search, testConnection, searchLogs, validateSearch, compactHit, histogram };

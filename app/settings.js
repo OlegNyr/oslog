@@ -96,15 +96,18 @@ function validate(patch, base) {
   if (!patch || typeof patch !== 'object') throw new Error('неверные настройки');
   const s = Object.assign({}, base || load());
   if ('url' in patch) {
-    const u = str(patch.url, 'URL', 2048).replace(/\/+$/, '');
+    const u = str(patch.url, 'URL', 2048);
     if (u) {
       let parsed;
       try { parsed = new URL(u); } catch (e) { throw new Error('URL: неверный адрес'); }
       if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('URL: только http(s)');
       if (parsed.username || parsed.password) throw new Error('URL: логин и пароль задаются отдельными полями');
-      if (parsed.search || parsed.hash) throw new Error('URL: без параметров и #');
-    }
-    s.url = u;
+      // a Dashboards address straight from the browser: cut /app/…, ?… and #…
+      const app = parsed.pathname.indexOf('/app/');
+      if (app >= 0) parsed.pathname = parsed.pathname.slice(0, app);
+      parsed.search = ''; parsed.hash = '';
+      s.url = parsed.toString().replace(/\/+$/, '');
+    } else s.url = '';
   }
   if ('username' in patch) s.username = str(patch.username, 'логин', 256);
   if ('caPath' in patch) s.caPath = str(patch.caPath, 'CA-сертификат', 1024);

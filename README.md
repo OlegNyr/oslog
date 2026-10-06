@@ -18,13 +18,13 @@ The user interface is in Russian; this guide quotes the Russian labels with tran
 
 On the first run the settings dialog opens (later: the **⚙** button in the top right corner):
 
-- **URL** — the OpenSearch address, e.g. `https://opensearch.example:9200`;
+- **URL** — the OpenSearch Dashboards address as in your browser (paste it whole, e.g. `https://opensearch.example/app/discover#…` — the extra part is cut off), or OpenSearch itself (`https://…:9200`) if you can reach it. Through Dashboards the app uses its Dev Tools console proxy with your login and password; the mode is detected automatically;
 - **Логин / Пароль** (login / password) — your personal ones;
 - **CA-сертификат** (CA certificate) — a path to a `.pem` file, if the cluster certificate is issued by an internal CA that isn't in the Windows certificate store. Usually not needed: corporate root certificates from Windows are picked up automatically. **не проверять сертификат** (don't verify the certificate) — only if nothing else helps;
 - **Индекс по умолчанию** (default index) — `plchat-k8s-prod-*`;
 - **Кэш** (cache) — how many days to keep (7 by default) and the maximum size (2 GB).
 
-Click **проверить соединение** (test connection) — you should see «есть соединение · N записей за 15 мин» (connected · N records in 15 min). Then **сохранить** (save).
+Click **проверить соединение** (test connection) — you should see «есть соединение · N записей за 15 мин» (connected · N records in 15 min), with «через Dashboards» (through Dashboards) for a Dashboards address. Then **сохранить** (save).
 
 ![Settings dialog](docs/images/settings.png)
 
@@ -82,6 +82,8 @@ The logs contain production data (matrix ids, IPs, URLs). The app talks only to 
 | `адрес не найден (DNS)`, `соединение отклонено`, `таймаут` (host not found / connection refused / timeout) | Check the URL and that you are on the network / VPN. |
 | `сбой на N из M шардов: … Failed to parse query` (failure on N of M shards) | The Lucene query has an error. |
 | `404: index_not_found_exception` | Check the index name. |
+| `…переадресует на … (SSO)…` (redirects to a browser login) | Dashboards only allows browser (SSO) login and doesn't accept a password. You need the direct OpenSearch address or an account with a password. |
+| `это адрес OpenSearch Dashboards, но запросы через него закрыты…` (Dashboards doesn't pass requests) | The Dev Tools console is disabled in Dashboards. You need the direct OpenSearch address. |
 
 ## For developers
 
