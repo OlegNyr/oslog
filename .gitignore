@@ -3,3 +3,5 @@ app/renderer/
 dist/
 log-viewer.html
 .idea/
+docs/request.json
+docs/response.json

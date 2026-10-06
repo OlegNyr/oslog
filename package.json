@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node build.js",
     "start": "node build.js && electron .",
-    "dist": "node build.js && electron-builder --win portable zip --x64"
+    "dist": "node build.js && electron-builder --win portable --x64"
   },
   "devDependencies": {
     "electron": "^44.5.1",
@@ -25,15 +25,17 @@
       "package.json"
     ],
     "asar": true,
+    "electronLanguages": [
+      "ru",
+      "en-US"
+    ],
     "win": {
       "target": [
-        "portable",
-        "zip"
-      ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+        "portable"
+      ]
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable.exe"
+      "artifactName": "${productName}-portable.exe"
     }
   }
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Loads the hits of an OpenSearch response (default docs/response.json) into
+// Loads the hits of an OpenSearch response (default docs/response.json — real
+// prod data, git-ignored, kept only locally) into
 // the local dev OpenSearch, keeping their _index, _id and _source as is.
 //   node dev/load-sample.js [response.json] [http://localhost:9200]
 'use strict';
