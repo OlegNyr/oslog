@@ -1,0 +1,18 @@
+# Local OpenSearch for development: http://localhost:9200, no security plugin.
+#   docker compose -f dev/docker-compose.yml up -d
+#   node dev/load-sample.js        # load docs/response.json hits
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2
+    container_name: oslog-os
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - oslog-os-data:/usr/share/opensearch/data
+volumes:
+  oslog-os-data:

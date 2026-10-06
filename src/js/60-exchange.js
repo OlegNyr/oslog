@@ -142,6 +142,7 @@
     return g;
   }
   function fieldValue(r, path){ // value of a JSON field; tries a flat key first (MDC dotted keys), then nested
+    if(r.k8s && path.indexOf("k8s.")===0) return r.k8s[path.slice(4)]; // OpenSearch k8s fields, also on RAW records
     var o=r.parsed; if(!o||typeof o!=="object") return undefined;
     if(Object.prototype.hasOwnProperty.call(o, path)) return o[path];
     return pick(o, [path]);

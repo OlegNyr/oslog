@@ -1,0 +1,121 @@
+  // ---------- OpenSearch query bar (Electron only) ----------
+  var QKEY="oslog.query";
+  var qs=null;           // persisted query-bar state, see qDefaults()
+  var qRunning=false;
+  var APP_RE=/^[\w.-]{1,100}$/;
+
+  function qDefaults(){
+    return { index:"", apps:[{name:"matrixkc",on:true},{name:"acd",on:false}], rel:15, from:null, to:null, query:"", limit:5000 };
+  }
+  function qLoad(){
+    var d=qDefaults(), s=null;
+    try{ s=JSON.parse(localStorage.getItem(QKEY)||"null"); }catch(e){}
+    if(s && typeof s==="object"){ for(var k in d){ if(Object.prototype.hasOwnProperty.call(s,k)) d[k]=s[k]; } }
+    if(!Array.isArray(d.apps)) d.apps=qDefaults().apps;
+    return d;
+  }
+  function qSave(){ try{ localStorage.setItem(QKEY, JSON.stringify(qs)); }catch(e){} }
+  function toLocalInputSec(ms){ return toLocalInput(ms)+":"+pad(new Date(ms).getSeconds()); }
+  function fromLocalInput(v){ var t=v? new Date(v).getTime() : NaN; return isNaN(t)? null : t; }
+
+  function qStatus(text, cls){ var el=$("osStatus"); el.textContent=text||""; el.className="q-status"+(cls?" "+cls:""); }
+
+  function renderApps(){
+    var box=$("osApps"); box.innerHTML="";
+    qs.apps.forEach(function(a, i){
+      var b=document.createElement("button");
+      b.className="tbtn q-app"+(a.on?" on":""); b.textContent=a.name;
+      b.onclick=function(){ a.on=!a.on; qSave(); renderApps(); };
+      b.oncontextmenu=function(e){ e.preventDefault(); qs.apps.splice(i,1); qSave(); renderApps(); toast("сервис убран: "+a.name); };
+      box.appendChild(b);
+    });
+    var add=document.createElement("button"); add.className="tbtn"; add.textContent="+"; add.title="Добавить сервис";
+    add.onclick=function(){
+      var inp=document.createElement("input"); inp.type="text"; inp.className="q-add"; inp.placeholder="сервис"; inp.spellcheck=false;
+      box.replaceChild(inp, add); inp.focus();
+      var done=false;
+      function finish(ok){
+        if(done) return; done=true;
+        var v=inp.value.trim();
+        if(ok && v){
+          if(!APP_RE.test(v)) toast("имя сервиса: буквы, цифры, _ . -");
+          else if(qs.apps.some(function(a){return a.name===v;})) toast("сервис уже есть");
+          else { qs.apps.push({name:v,on:true}); qSave(); }
+        }
+        renderApps();
+      }
+      inp.addEventListener("keydown",function(e){
+        if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); finish(true); }
+        else if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); finish(false); }
+      });
+      inp.addEventListener("blur",function(){ finish(true); });
+    };
+    box.appendChild(add);
+  }
+  function renderTimes(){
+    if(qs.rel){ var now=Date.now(); qs.to=now; qs.from=now-qs.rel*60000; }
+    $("osFrom").value=qs.from!=null? toLocalInputSec(qs.from) : "";
+    $("osTo").value=qs.to!=null? toLocalInputSec(qs.to) : "";
+    Array.prototype.forEach.call($("osQuick").children,function(b){ b.classList.toggle("on", Number(b.dataset.min)===qs.rel); });
+  }
+  function setRunning(on){
+    qRunning=on;
+    var b=$("osLoad"); b.textContent=on? "стоп" : "загрузить"; b.classList.toggle("stop", on);
+  }
+  function fmtN(n){ return Number(n||0).toLocaleString("ru-RU"); }
+
+  function osLoad(){
+    if(qRunning){ osApi.stopSearch(); return; }
+    renderTimes(); // a quick range (15м…) is relative: it ends now on every load
+    var from=fromLocalInput($("osFrom").value), to=fromLocalInput($("osTo").value);
+    if(from==null || to==null){ qStatus("задайте интервал","err"); return; }
+    if(from>to){ qStatus("«от» позже «до»","err"); return; }
+    var apps=qs.apps.filter(function(a){return a.on;}).map(function(a){return a.name;});
+    if(!apps.length){ qStatus("выберите сервис","err"); return; }
+    var limit=Math.floor(Number($("osLimit").value));
+    if(!(limit>=1 && limit<=100000)){ qStatus("лимит: от 1 до 100 000","err"); return; }
+    qs.index=$("osIndex").value.trim(); qs.query=$("osQuery").value; qs.limit=limit; qs.from=from; qs.to=to;
+    qSave();
+    var t0=Date.now();
+    setRunning(true); qStatus("загрузка…");
+    osApi.search({ index:qs.index, apps:apps, from:from, to:to, query:qs.query, limit:limit }, function(p){
+      qStatus("загружено "+fmtN(p.loaded)+" из "+fmtN(p.total)+"…");
+    }).then(function(res){
+      var recs=hitsToRecords(res.hits);
+      setRecords(recs, apps.join(" + ")+" · "+qs.index, "записей");
+      var distinct={}; recs.forEach(function(r){ distinct[r.k8s.app]=1; });
+      if(Object.keys(distinct).length>1 && !customCols.some(function(c){return c.path==="k8s.app";})) addCustomCol("k8s.app","service");
+      var sec=" · "+((Date.now()-t0)/1000).toFixed(1)+" с", n=fmtN(res.hits.length), tot=fmtN(res.total);
+      if(res.reason==="limit") qStatus(n+" из "+tot+" — достигнут лимит"+sec,"warn");
+      else if(res.reason==="stopped") qStatus("остановлено: "+n+" из "+tot+sec,"warn");
+      else if(res.reason==="error") qStatus(n+" из "+tot+", ошибка: "+res.error,"err");
+      else qStatus(n+(res.hits.length===1?" запись":" записей")+sec);
+    },function(e){
+      qStatus(e.message,"err");
+    }).then(function(){ setRunning(false); });
+  }
+
+  if(osApi){
+    qs=qLoad();
+    $("qbar").style.display="";
+    $("osQuery").value=qs.query||"";
+    $("osLimit").value=qs.limit;
+    renderApps(); renderTimes();
+    osApi.getSettings().then(function(s){ $("osIndex").value=qs.index||s.index||""; },function(){});
+    $("osQuick").addEventListener("click",function(e){
+      var b=e.target.closest && e.target.closest("button[data-min]"); if(!b) return;
+      qs.rel=Number(b.dataset.min); renderTimes(); osLoad();
+    });
+    ["osFrom","osTo"].forEach(function(id){
+      $(id).addEventListener("change",function(){
+        qs.rel=null; qs.from=fromLocalInput($("osFrom").value); qs.to=fromLocalInput($("osTo").value);
+        renderTimes(); qSave();
+      });
+    });
+    $("osLoad").onclick=osLoad;
+    $("qbar").addEventListener("keydown",function(e){
+      if(e.key==="Enter" && e.target.tagName==="INPUT"){ e.preventDefault(); if(!qRunning) osLoad(); }
+    });
+    drop.querySelector("h1").textContent="Загрузите логи из OpenSearch";
+    drop.querySelector("p").textContent="Выберите сервисы и интервал в строке сверху и нажмите «загрузить». Можно и по-старому: перетащить сюда ndjson-файл или вставить его.";
+  }

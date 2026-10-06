@@ -53,8 +53,9 @@ function osErrorText(status, body) {
     const j = JSON.parse(body);
     const rc = j.error && (j.error.root_cause && j.error.root_cause[0] || j.error);
     reason = rc ? (rc.type ? rc.type + ': ' : '') + (rc.reason || '') : '';
-    if (j.error && j.error.caused_by && j.error.caused_by.reason && reason.indexOf(j.error.caused_by.reason) < 0) {
-      reason += ' — ' + j.error.caused_by.reason;
+    const cb = (rc && rc.caused_by) || (j.error && j.error.caused_by);
+    if (cb && cb.reason && reason.indexOf(cb.reason) < 0) {
+      reason += ' — ' + cb.reason.split('\n')[0];
     }
   } catch (e) { reason = String(body || '').slice(0, 300); }
   return status + (reason ? ': ' + reason.slice(0, 500) : '');
@@ -103,9 +104,24 @@ function request(conn, method, path, body, opts) {
   });
 }
 
-function search(conn, index, body, opts) {
-  if (typeof index !== 'string' || !INDEX_RE.test(index)) return Promise.reject(new Error('неверное имя индекса'));
-  return request(conn, 'POST', '/' + encodeURI(index) + '/_search', body, opts);
+// A search answers 200 even when some shards failed (e.g. a bad Lucene query
+// fails only on shards that weren't skipped by the time range) — the hits are
+// then incomplete or empty, so that is an error too.
+function shardFailure(r) {
+  const sh = r && r._shards;
+  if (!sh || !sh.failed) return null;
+  const f = sh.failures && sh.failures[0] && sh.failures[0].reason;
+  let reason = f ? (f.type ? f.type + ': ' : '') + (f.reason || '') : '';
+  if (f && f.caused_by && f.caused_by.reason) reason += ' — ' + f.caused_by.reason.split('\n')[0];
+  return 'сбой на ' + sh.failed + ' из ' + sh.total + ' шардов' + (reason ? ': ' + reason.slice(0, 500) : '');
+}
+
+async function search(conn, index, body, opts) {
+  if (typeof index !== 'string' || !INDEX_RE.test(index)) throw new Error('неверное имя индекса');
+  const r = await request(conn, 'POST', '/' + encodeURI(index) + '/_search', body, opts);
+  const failed = shardFailure(r);
+  if (failed) throw new Error(failed);
+  return r;
 }
 
 // "Проверить соединение": a size-0 search on the index — needs only the
@@ -125,4 +141,132 @@ async function testConnection(conn, index) {
   };
 }
 
-module.exports = { request, search, testConnection };
+// ---------- log search (stage 2) ----------
+const PAGE = 1000;
+const TIE_PAGE = 10000; // one millisecond holding more than a page of hits
+const MAX_LIMIT = 100000;
+const APP_RE = /^[\w.-]{1,100}$/;
+const SOURCE = ['@timestamp', 'message', 'pod_labels.app', 'pod', 'namespace', 'container', 'node', 'k8sClusterName'];
+const SORT = [{ '@timestamp': { order: 'desc', unmapped_type: 'boolean' } }];
+
+// req from the renderer: {index, apps[], from, to (epoch ms), query?, limit}
+function validateSearch(req) {
+  if (!req || typeof req !== 'object') throw new Error('неверный запрос');
+  const index = req.index;
+  if (typeof index !== 'string' || !INDEX_RE.test(index) || index.length > 512) throw new Error('неверное имя индекса');
+  const apps = req.apps;
+  if (!Array.isArray(apps) || !apps.length || apps.length > 20 || !apps.every((a) => typeof a === 'string' && APP_RE.test(a))) {
+    throw new Error('выберите хотя бы один сервис');
+  }
+  const from = req.from, to = req.to;
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || from > to) throw new Error('неверный интервал');
+  const query = req.query == null ? '' : req.query;
+  if (typeof query !== 'string' || query.length > 4000) throw new Error('слишком длинный запрос');
+  const limit = req.limit;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new Error('лимит: от 1 до ' + MAX_LIMIT);
+  return { index, apps: Array.from(new Set(apps)), from, to, query: query.trim(), limit };
+}
+
+function searchBody(q, gte, lte, size, trackTotal) {
+  const filter = [
+    { range: { '@timestamp': { gte, lte, format: 'epoch_millis' } } },
+    { bool: { should: q.apps.map((a) => ({ match_phrase: { 'pod_labels.app': a } })), minimum_should_match: 1 } },
+  ];
+  if (q.query) filter.push({ query_string: { query: q.query, analyze_wildcard: true } });
+  return { size, sort: SORT, _source: SOURCE, track_total_hits: trackTotal, query: { bool: { filter } } };
+}
+
+function sourceField(s, path) {
+  if (Object.prototype.hasOwnProperty.call(s, path)) return s[path];
+  let v = s;
+  for (const p of path.split('.')) { if (v && typeof v === 'object' && p in v) v = v[p]; else return undefined; }
+  return v;
+}
+
+// Only what the viewer needs: key for dedupe, ingest ts (ms), the log line, k8s fields.
+function compactHit(h) {
+  const s = h._source || {};
+  let msg = s.message;
+  if (typeof msg !== 'string') msg = msg == null ? '' : JSON.stringify(msg);
+  const ts = h.sort && typeof h.sort[0] === 'number' ? h.sort[0] : Date.parse(s['@timestamp']);
+  return {
+    key: h._index + '/' + h._id,
+    ts,
+    msg,
+    k8s: {
+      app: sourceField(s, 'pod_labels.app'),
+      pod: s.pod,
+      namespace: s.namespace,
+      container: s.container,
+      node: s.node,
+      cluster: s.k8sClusterName,
+    },
+  };
+}
+
+// Newest → oldest in pages of PAGE. The next page repeats the query with
+// lte = the last hit's time and drops hits already seen (by _index/_id), so
+// hits sharing a timestamp across a page edge are never lost. No search_after
+// / PIT — works on any OpenSearch version.
+// Resolves {hits, total, reason: 'done'|'limit'|'stopped', error?}; rejects
+// only if nothing was loaded.
+async function searchLogs(conn, req, opts) {
+  opts = opts || {};
+  const q = validateSearch(req);
+  const signal = opts.signal;
+  const progress = opts.onProgress || (() => {});
+  const seen = new Set();
+  const out = [];
+  let total = null;
+  let lte = q.to;
+  let reason = 'done';
+
+  function take(hits) {
+    let added = 0;
+    for (const h of hits) {
+      const key = h._index + '/' + h._id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(compactHit(h));
+      added++;
+      if (out.length >= q.limit) break;
+    }
+    return added;
+  }
+
+  try {
+    for (;;) {
+      const r = await search(conn, q.index, searchBody(q, q.from, lte, PAGE, total === null), { signal });
+      if (total === null) {
+        const t = r.hits && r.hits.total;
+        total = typeof t === 'number' ? t : (t && t.value) || 0;
+      }
+      const hits = (r.hits && r.hits.hits) || [];
+      const added = take(hits);
+      progress({ loaded: out.length, total });
+      if (out.length >= q.limit) { reason = 'limit'; break; }
+      if (hits.length < PAGE) break;
+      const last = hits[hits.length - 1].sort && hits[hits.length - 1].sort[0];
+      if (typeof last !== 'number') throw new Error('нет значения сортировки в ответе');
+      if (added === 0) {
+        // the whole page is one millisecond: fetch that millisecond in full, then step past it
+        const rt = await search(conn, q.index, searchBody(q, last, last, TIE_PAGE, false), { signal });
+        take((rt.hits && rt.hits.hits) || []);
+        progress({ loaded: out.length, total });
+        if (out.length >= q.limit) { reason = 'limit'; break; }
+        if (last - 1 < q.from) break;
+        lte = last - 1;
+      } else {
+        lte = last;
+      }
+      if (signal && signal.aborted) { reason = 'stopped'; break; }
+    }
+  } catch (e) {
+    if (signal && signal.aborted) reason = 'stopped';
+    else if (out.length) return { hits: out, total, reason: 'error', error: e.message };
+    else throw e;
+  }
+  return { hits: out, total, reason };
+}
+
+module.exports = { request, search, testConnection, searchLogs, validateSearch, compactHit };

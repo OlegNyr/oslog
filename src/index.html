@@ -18,6 +18,25 @@
 </head>
 <body>
 
+<div class="toolbar qbar" id="qbar" style="display:none">
+  <input id="osIndex" class="q-index" type="text" title="Индекс или шаблон индексов" spellcheck="false" autocomplete="off">
+  <div class="q-apps" id="osApps" title="Сервисы (pod_labels.app). Клик — вкл/выкл, правый клик — убрать"></div>
+  <div class="timerange">
+    <input type="datetime-local" id="osFrom" step="1" title="от">
+    <span class="arrow">→</span>
+    <input type="datetime-local" id="osTo" step="1" title="до">
+  </div>
+  <div class="q-quick" id="osQuick">
+    <button class="tbtn" data-min="15">15м</button><button class="tbtn" data-min="60">1ч</button><button class="tbtn" data-min="360">6ч</button><button class="tbtn" data-min="1440">24ч</button>
+  </div>
+  <div class="search q-lucene">
+    <input id="osQuery" type="text" placeholder="запрос Lucene (необязательно), например app.level:ERROR" spellcheck="false" autocomplete="off">
+  </div>
+  <label class="q-limit" title="Сколько записей загрузить максимум">лимит<input id="osLimit" type="number" min="1" max="100000" step="1000"></label>
+  <button class="tbtn m-primary" id="osLoad">загрузить</button>
+  <span class="q-status" id="osStatus"></span>
+</div>
+
 <div class="toolbar">
   <div class="brand"><b>oslog</b><span id="fileName">no file</span></div>
   <div class="timerange" id="timerange" title="Показать только записи во временном интервале">

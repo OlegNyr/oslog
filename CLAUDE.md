@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-Stage 1 (skeleton) is done: Electron 44 window, `build.js` → `app/renderer/index.html`, `window.osApi`, settings dialog (⚙, opens on first run) with `safeStorage` password and «проверить соединение», `setRecords()` in the viewer. `search` / `cacheStats` / `clearCache` are stubs in `app/main.js` (stages 2–3); `app/cache.js` doesn't exist yet. Next is stage 2 (search) from the plan.
+Stages 1 (skeleton) and 2 (search) are done: Electron window, settings with `safeStorage`, «проверить соединение», and the OpenSearch query bar (index, service toggles, interval + 15м/1ч/6ч/24ч, Lucene, limit, загрузить/стоп, progress/errors) feeding the viewer through `setRecords()`. `cacheStats` / `clearCache` are still stubs in `app/main.js`; `app/cache.js` doesn't exist yet. Next is stage 3 (SQLite cache) from the plan.
 
 Verified: `node:sqlite` works in Electron 44.5.1 (Node 24.21, SQLite 3.53.4) in the main process — no `better-sqlite3` needed.
 
@@ -21,14 +21,17 @@ When a stage lands, update this section and the layout below so they match the c
 - `src/` — the renderer page. `src/index.html` is the shell with two build markers: `/*@build:styles@*/` inside `<style>` and `/*@build:script@*/` inside the one `"use strict"` IIFE. `src/styles.css` holds all CSS. `src/js/NN-*.js` are script fragments **concatenated in filename order into that single IIFE** — they share one closure (`ALL`, `VIEW`, `filters`, …); no modules, no imports. Add a section as `NN-name.js`, choosing `NN` for its position.
 - `build.js` — plain Node, no dependencies; inlines CSS + JS into `app/renderer/index.html` (generated, git-ignored; don't hand-edit) and puts the inline script's sha256 into the page CSP (`'@build:script-hash@'` in `src/index.html`). So: exactly one inline `<script>`, no inline event handlers (`onclick="…"`), no `eval`.
 - `app/` — Electron: `main.js` (window, navigation lock, IPC handlers with sender check, `{ok,data}|{ok:false,error}` envelope), `preload.js` (`contextBridge` → `window.osApi`, unwraps the envelope into promises), `opensearch.js` (HTTP client: basic auth, default+system+`.pem` CAs, timeouts, error texts in Russian), `settings.js` (`userData/settings.json` + `password.bin`), `cache.js` (SQLite, stage 3).
-- `src/js/87-settings.js` — the settings dialog; shown only when `window.osApi` exists, so the page still works as a plain viewer in a browser.
+- `src/js/12-hits.js` — `hitToRecord` / `hitsToRecords`: OpenSearch hits → viewer records (`norm()` + `r.k8s`, sorted by log time, then `sequenceNumber`). `fieldValue` resolves `k8s.*` from `r.k8s`, so ⊕/▦ work on RAW records too; `showDetail` has a «kubernetes» section.
+- `src/js/87-settings.js` — the settings dialog; `src/js/88-query-bar.js` — the query bar (state in `localStorage` `oslog.query`; a quick range is relative and re-anchors to now on every load). Both appear only when `window.osApi` exists, so the page still works as a plain viewer in a browser.
+- `app/opensearch.js` `searchLogs()` — validation, query body, `lte`+dedupe pagination (a full page of one millisecond is fetched in one 10 000-hit request, then stepped past), stop via `AbortSignal`; resolves `{hits, total, reason: done|limit|stopped|error, error?}`. `search()` treats `_shards.failed > 0` as an error: OpenSearch answers 200 when a bad Lucene query fails only on the shards the time range didn't skip.
+- `dev/` — local OpenSearch 2 in Docker (`docker compose -f dev/docker-compose.yml up -d`, http://localhost:9200, no auth), `node dev/load-sample.js` (the `docs/response.json` hits as is), `node dev/load-synthetic.js [count]` (≈8 000 matrixkc/acd records over the last hour with parsed `app.*`, errors, request/response pairs, a RAW banner and 1 500 hits sharing one `@timestamp`).
 - Password storage: `safeStorage`; on Linux without a keyring (WSL) the backend is `basic_text` — `settings.js` then enables plain-text mode and the dialog warns (`passwordStorage: 'weak'`). Windows uses DPAPI.
 - `docs/request.json`, `docs/response.json` — a real OpenSearch Dashboards request/response for `pod_labels.app: matrixkc`. Use them for parsing tests and the OpenSearch stub.
 - `docs/logview-CLAUDE.md` — the original viewer's guide: detailed architecture (`norm`/`pick`, `ALL`/`VIEW`, `corrIndex`, `applyFilters`, virtual list, columns, timeline, `showDetail`). Read it before changing viewer code.
 
 ## Running & testing
 
-`npm install`, then `npm start` (build + `electron .`); in WSL the window appears via WSLg. For scripted checks run `npx electron . --remote-debugging-port=9333 --user-data-dir=<tmp>` and drive the page over CDP (`/json` → WebSocket, `Runtime.evaluate`, `Page.captureScreenshot`); a separate `--user-data-dir` keeps test settings away from the real ones. There is no test harness — verify parsing with Node scripts against `docs/response.json`, the OpenSearch client and cache against a local stub server serving `docs/` responses, and the real cluster / window / `.exe` manually.
+`npm install`, then `npm start` (build + `electron .`); in WSL the window appears via WSLg. For scripted checks run `npx electron . --remote-debugging-port=9333 --user-data-dir=<tmp>` and drive the page over CDP (`/json` → WebSocket, `Runtime.evaluate`, `Page.captureScreenshot`); a separate `--user-data-dir` keeps test settings away from the real ones. There is no test harness — verify parsing with Node scripts against `docs/response.json`, the OpenSearch client and cache against the Docker OpenSearch in `dev/` (`app/opensearch.js` has no Electron imports, so `node -e "require('./app/opensearch').searchLogs(...)"` works), and the real cluster / window / `.exe` manually. Docker runs inside WSL — never call Windows binaries (`docker.exe`).
 
 ## Key design points
 
@@ -48,7 +51,7 @@ When a stage lands, update this section and the layout below so they match the c
 ## Electron security (non-negotiable)
 
 - `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, strict CSP (local resources only).
-- The renderer gets only the narrow `window.osApi` (`search`, `getSettings`, `saveSettings`, `testConnection`, `cacheStats`, `clearCache`) — never generic HTTP, fs, or shell access.
+- The renderer gets only the narrow `window.osApi` (`search(req, onProgress)`, `stopSearch`, `getSettings`, `saveSettings`, `testConnection`, `cacheStats`, `clearCache`) — never generic HTTP, fs, or shell access.
 - Main validates every IPC argument: index name against `[\w.*,-]+`, only `_search`, size limits.
 - The password is stored with `safeStorage` and **never sent back to the renderer**. Logs contain prod data (matrix ids, IPs, URLs) — don't log them to the console or anywhere outside the cache.
 

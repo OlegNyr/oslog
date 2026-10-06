@@ -63,6 +63,15 @@
     if(o.tags && o.tags.length) proc.push(["tags", o.tags.join(", "), null]); // array -> substring fallback
     if(proc.length) b.appendChild(kvSection("process", proc, r));
 
+    // kubernetes (records loaded from OpenSearch)
+    if(r.k8s){
+      var kr=[];
+      [["service","app"],["pod","pod"],["namespace","namespace"],["container","container"],["node","node"],["cluster","cluster"]].forEach(function(f){
+        var v=r.k8s[f[1]]; if(v!==undefined && v!==null && v!=="") kr.push([f[0], String(v), null, "k8s."+f[1]]);
+      });
+      if(kr.length) b.appendChild(kvSection("kubernetes", kr, r));
+    }
+
     // error / stack
     if(o.error){
       var h=document.createElement("div"); h.className="sect-h";

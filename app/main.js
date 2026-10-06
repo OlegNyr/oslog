@@ -5,6 +5,10 @@ const settings = require('./settings');
 const opensearch = require('./opensearch');
 
 const PAGE = path.join(__dirname, 'renderer', 'index.html');
+
+// Russian UI: also makes datetime-local inputs use the dd.mm.yyyy, 24h format
+// whatever the OS locale is.
+app.commandLine.appendSwitch('lang', 'ru');
 let win = null;
 
 function createWindow() {
@@ -69,7 +73,29 @@ handle('testConnection', (patch) => {
   return opensearch.testConnection(connFrom(s, pw), s.index);
 });
 
-handle('search', () => { throw new Error('поиск появится на этапе 2'); });
+// One search at a time: a new one (or stopSearch) aborts the running one,
+// which then resolves with what it has loaded.
+let running = null;
+handle('search', async (req) => {
+  const { id } = req || {};
+  if (!Number.isSafeInteger(id)) throw new Error('неверный запрос');
+  if (running) running.abort();
+  const ctl = new AbortController();
+  running = ctl;
+  try {
+    const s = settings.load();
+    const conn = connFrom(s, settings.getPassword());
+    return await opensearch.searchLogs(conn, req, {
+      signal: ctl.signal,
+      onProgress: (p) => {
+        if (win && !win.isDestroyed()) win.webContents.send('osapi:progress', Object.assign({ id }, p));
+      },
+    });
+  } finally {
+    if (running === ctl) running = null;
+  }
+});
+handle('stopSearch', () => { if (running) running.abort(); return true; });
 handle('cacheStats', () => ({ enabled: false, hits: 0, bytes: 0 }));
 handle('clearCache', () => ({ enabled: false, removed: 0 }));
 

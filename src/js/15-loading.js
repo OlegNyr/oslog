@@ -6,12 +6,12 @@
       var ln=lines[i]; if(ln.trim()==="") continue;
       recs.push(norm(ln, recs.length+1));
     }
-    setRecords(recs, name, "lines");
+    setRecords(recs, name, "строк");
   }
   // Replaces the loaded set with ready records (from norm()) and redraws
-  // everything. `what` names the unit in the header/toast ("lines", "записей").
+  // everything. `what` names the unit in the header/toast ("строк", "записей").
   function setRecords(recs, name, what){
-    what = what || "lines";
+    what = what || "строк";
     ALL = recs;
     corrIndex = new Map();
     for(var ci=0; ci<ALL.length; ci++){
@@ -25,7 +25,7 @@
     setupTimeBounds();
     buildLevelButtons();
     applyFilters();
-    toast("Loaded "+recs.length+" "+what);
+    toast("загружено "+recs.length+" "+what);
   }
   function loadFiles(fileList){
     var files=Array.prototype.slice.call(fileList);

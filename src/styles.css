@@ -340,3 +340,26 @@
   .modal .m-foot .m-err{flex:1 1 auto}
   .tbtn.m-primary{border-color:var(--accent-dim);color:var(--accent);background:#13211f}
   .tbtn.m-primary:hover{background:#16302d}
+
+  /* ---------- OpenSearch query bar ---------- */
+  .qbar{background:var(--bg-3)}
+  .qbar input[type=text],.qbar input[type=number]{
+    background:var(--panel);border:1px solid var(--line);border-radius:5px;color:var(--txt);
+    font-family:var(--mono);font-size:12px;height:30px;padding:0 8px;outline:0;
+  }
+  .qbar input:focus{border-color:var(--accent-dim)}
+  .qbar .q-index{width:170px}
+  .qbar .q-apps,.qbar .q-quick{display:flex;gap:4px;align-items:center}
+  .qbar .q-quick .tbtn{padding:0 8px}
+  .qbar .tbtn.on{color:var(--accent);border-color:var(--accent-dim);background:#13211f}
+  .qbar .q-app{font-family:var(--mono)}
+  .qbar .q-app:not(.on){opacity:.55}
+  .qbar .q-add{width:110px}
+  .qbar .q-lucene{flex:1 1 260px;min-width:180px}
+  .qbar .q-limit{display:flex;align-items:center;gap:5px;color:var(--txt-faint);font-size:11px}
+  .qbar .q-limit input{width:80px}
+  .qbar #osLoad{min-width:88px;justify-content:center}
+  .qbar #osLoad.stop{color:var(--lv-error);border-color:var(--lv-error);background:transparent}
+  .qbar .q-status{font-family:var(--mono);font-size:11px;color:var(--txt-dim);flex:0 1 auto;min-width:0;overflow-wrap:anywhere}
+  .qbar .q-status.err{color:var(--lv-error)}
+  .qbar .q-status.warn{color:var(--lv-warn)}
