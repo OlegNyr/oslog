@@ -274,4 +274,53 @@ async function searchLogs(conn, req, opts) {
   return { hits: out, total, reason };
 }
 
-module.exports = { request, search, testConnection, searchLogs, validateSearch, compactHit };
+// ---------- density histogram over the whole query range ----------
+const HIST_BUCKETS = 120;
+const HIST_STEPS = [ // [ms, fixed_interval]
+  [1e3, '1s'], [2e3, '2s'], [5e3, '5s'], [10e3, '10s'], [15e3, '15s'], [30e3, '30s'],
+  [60e3, '1m'], [120e3, '2m'], [300e3, '5m'], [600e3, '10m'], [900e3, '15m'], [1800e3, '30m'],
+  [3600e3, '1h'], [7200e3, '2h'], [10800e3, '3h'], [21600e3, '6h'], [43200e3, '12h'], [86400e3, '1d'],
+  [172800e3, '2d'], [604800e3, '7d'], [2592000e3, '30d'],
+];
+
+function histStep(from, to) {
+  const want = (to - from) / HIST_BUCKETS;
+  for (const s of HIST_STEPS) if (s[0] >= want) return s;
+  return HIST_STEPS[HIST_STEPS.length - 1];
+}
+
+// Same conditions as searchLogs (range, services, Lucene / traceId); counts per
+// bucket with ERROR / WARN split via match_phrase on app.level (works whether
+// the field is text or keyword). Resolves {from, to, step, total, buckets:[{t, n, err, warn}]}.
+async function histogram(conn, req, opts) {
+  const q = validateSearch(Object.assign({}, req, { limit: 1 }));
+  const [step, interval] = histStep(q.from, q.to);
+  const body = searchBody(q, q.from, q.to, 0, true);
+  delete body.sort; delete body._source;
+  body.aggs = {
+    h: {
+      date_histogram: { field: '@timestamp', fixed_interval: interval, min_doc_count: 0, extended_bounds: { min: q.from, max: q.to } },
+      aggs: { lv: { filters: { filters: {
+        ERROR: { match_phrase: { 'app.level': 'ERROR' } },
+        WARN: { match_phrase: { 'app.level': 'WARN' } },
+      } } } },
+    },
+  };
+  const r = await search(conn, q.index, body, Object.assign({ timeout: 30000 }, opts));
+  const t = r.hits && r.hits.total;
+  const raw = (r.aggregations && r.aggregations.h && r.aggregations.h.buckets) || [];
+  return {
+    from: q.from,
+    to: q.to,
+    step,
+    total: typeof t === 'number' ? t : (t && t.value) || 0,
+    buckets: raw.map((b) => ({
+      t: b.key,
+      n: b.doc_count,
+      err: (b.lv && b.lv.buckets.ERROR.doc_count) || 0,
+      warn: (b.lv && b.lv.buckets.WARN.doc_count) || 0,
+    })),
+  };
+}
+
+module.exports = { request, search, testConnection, searchLogs, validateSearch, compactHit, histogram };

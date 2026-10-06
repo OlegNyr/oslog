@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('osApi', {
       .finally(() => ipcRenderer.removeListener('osapi:progress', listener));
   },
   stopSearch: () => call('stopSearch'),
+  histogram: (req) => call('histogram', req),
   getSettings: () => call('getSettings'),
   saveSettings: (patch) => call('saveSettings', patch),
   testConnection: (patch) => call('testConnection', patch),

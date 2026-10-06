@@ -1,6 +1,7 @@
   // ---------- loading ----------
   function loadText(text, name){
     if(csvSniff(text)){ loadParts([{name:name, text:text}]); return; }
+    histHide(); // the density strip belongs to OpenSearch queries
     var lines = text.split(/\r?\n/);
     var recs=[];
     for(var i=0;i<lines.length;i++){
@@ -58,6 +59,7 @@
       }
     });
     if(!hits.length){ toast(errors[0]||"нет записей"); return; }
+    histHide();
     setRecords(hitsToRecords(hits), name, "записей");
     var apps={}; ALL.forEach(function(r){ if(r.k8s && r.k8s.app) apps[r.k8s.app]=1; });
     if(Object.keys(apps).length>1 && !customCols.some(function(c){return c.path==="k8s.app";})) addCustomCol("k8s.app","service");

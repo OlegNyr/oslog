@@ -367,3 +367,15 @@
   .col-head>div[data-sort]{cursor:pointer;user-select:none}
   .col-head>div[data-sort]:hover{color:var(--txt)}
   .col-head .sort-ind{color:var(--accent);margin-left:4px;font-size:9px}
+
+  /* ---------- density histogram (above the timeline) ---------- */
+  .hist{position:relative;flex:0 0 auto;height:52px;padding:4px 10px 0;background:var(--panel);border-bottom:1px solid var(--line-soft);cursor:crosshair;user-select:none}
+  .hist-svg{display:block;width:100%;height:34px}
+  .hist-svg .h-n{fill:var(--accent-dim)}
+  .hist-svg .h-warn{fill:var(--lv-warn)}
+  .hist-svg .h-err{fill:var(--lv-error)}
+  .hist-svg .h-dim{fill:var(--bg);opacity:.65}
+  .hist-sel{position:absolute;top:4px;height:34px;margin-left:10px;background:rgba(76,199,192,.18);border:1px solid var(--accent-dim);pointer-events:none}
+  .hist-axis{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:10px;color:var(--txt-faint);line-height:13px;white-space:nowrap}
+  .hist-axis .hist-mid{color:var(--txt-dim);overflow:hidden;text-overflow:ellipsis}
+  .hist-msg{font-family:var(--mono);font-size:11px;color:var(--txt-faint);line-height:44px}

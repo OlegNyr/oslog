@@ -104,6 +104,11 @@ handle('search', async (req) => {
     if (running === ctl) running = null;
   }
 });
+// Density over the whole range — always live from OpenSearch, never cached.
+handle('histogram', (req) => {
+  const s = settings.load();
+  return opensearch.histogram(connFrom(s, settings.getPassword()), req);
+});
 handle('stopSearch', () => { if (running) running.abort(); return true; });
 handle('cacheStats', () => cache.stats());
 handle('clearCache', () => {

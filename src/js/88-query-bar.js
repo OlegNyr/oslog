@@ -84,6 +84,7 @@
   function runSearch(req, name, what){
     var t0=Date.now();
     setRunning(true); qStatus(what+"загрузка…");
+    if(req.traceId) histHide(); else histLoad(req);
     osApi.search(req, function(p){
       qStatus(what+(p.cached? "из кэша "+fmtN(p.cached)+" · " : "")+"загружено "+fmtN(p.loaded)+" из "+fmtN(p.total)+"…");
     }).then(function(res){
@@ -92,6 +93,7 @@
       if(req.traceId && !res.hits.length){ qStatus(what+"в OpenSearch не найдено (±1 ч от записи)","warn"); return; }
       var recs=hitsToRecords(res.hits);
       setRecords(recs, name, "записей");
+      if(!req.traceId) histSetLoaded(res.hits);
       var distinct={}; recs.forEach(function(r){ distinct[r.k8s.app]=1; });
       if(Object.keys(distinct).length>1 && !customCols.some(function(c){return c.path==="k8s.app";})) addCustomCol("k8s.app","service");
       // total is known only for a straight OpenSearch query (Lucene, trace); through the cache it's null
@@ -105,6 +107,12 @@
     },function(e){
       qStatus(what+e.message,"err");
     }).then(function(){ setRunning(false); });
+  }
+
+  // dragged on the density histogram: that range becomes the query and loads
+  function histPickRange(from, to){
+    if(qRunning) return;
+    qs.rel=null; qs.from=from; qs.to=to; renderTimes(); qSave(); osLoad();
   }
 
   // «весь трейс» in the detail panel: every record of this traceId in all
